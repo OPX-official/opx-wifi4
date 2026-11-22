@@ -1,10 +1,14 @@
 # wifi4 — OPX Edition
 > A standalone USB Wi-Fi auditor for Linux, Windows, macOS, and Android (via Termux).
 
+[![Latest release](https://img.shields.io/github/v/release/OPX-official/opx-wifi4?label=release&color=blue)](https://github.com/OPX-official/opx-wifi4/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/OPX-official/opx-wifi4/total?label=downloads)](https://github.com/OPX-official/opx-wifi4/releases)
+[![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+
 > **OPX build of [wifit3](https://github.com/derv82/wifit3).** Same engine, new name: the
 > command is `wifi4`. Everything ships from this repository — installs, releases and docs.
 >
-> **Versioning:** releases are tagged `v<upstream>+opx.<n>` (for example `v0.7.1+opx.1`),
+> **Versioning:** releases are tagged `v<upstream>+opx.<n>` (for example `v0.7.1+opx.2`),
 > where `<upstream>` is the wifit3 version this build is based on and `<n>` counts OPX
 > releases on that base.
 
@@ -95,7 +99,8 @@ Breakdown of each device's capabilities and limitations: [Supported Hardware Doc
 ## Installation & Running
 
 ### Option 1: Download Prebuilt Binaries (Recommended)
-Download the latest standalone executable from [**Releases**](https://github.com/OPX-official/opx-wifi4/releases/latest):
+Download the latest standalone executable or Termux wheel from [**Releases**](https://github.com/OPX-official/opx-wifi4/releases/latest).
+Every asset there is built and smoke-tested by CI — see [Releases & Automation](#releases--automation).
 
 * **Windows:** Download and run `wifi4-windows-x64.exe`.
 * **Linux x64 (non-sudo):** `chmod +x wifi4-linux-x64 && ./wifi4-linux-x64`
@@ -136,13 +141,64 @@ uv run --no-dev wifi4
 Install the **Termux:API app** from F-Droid or Google Play as well; the `termux-api` package is only the client. Use `--no-dev`: the dev group includes PyInstaller, which doesn't build on Termux. Python 3.13+ skips `libusb-package`; older Pythons can use the prebuilt wheel above or `uv sync --no-dev --no-install-package libusb-package`. See [Running in Termux](docs/TERMUX.md) for the USB setup.
 
 ### Option 3: Build your own binary
+PyInstaller can't cross-compile, so build on the OS you want the binary for. It lives in the `dev`
+dependency group:
 ```bash
+uv sync --group dev
 uv run pyinstaller wifi4.spec --noconfirm --clean
 ```
-Binary executable is written to `dist/` subdirectory.
+The executable is written to `dist/` (`dist/wifi4`, or `dist\wifi4.exe` on Windows).
 
-### Android (Termux, no root)
-Maintained by [**OPX Team**](https://github.com/OPX-official) at [**opx-wifi4**](https://github.com/OPX-official/opx-wifi4): no root, proot or VM. It uses `termux-usb` and asks Android for permission when a card is plugged in. Install steps are in its README.
+## Releases & Automation
+
+Two GitHub Actions workflows own this: [`Release`](.github/workflows/release.yml) publishes, and
+[`Build binaries`](.github/workflows/build-binaries.yml) is the only thing that builds.
+
+### One-click release
+
+**Actions** → **Release** → **Run workflow** on `main`, leaving **Publish release** ticked. That
+single run:
+
+1. bumps the fork counter in [`src/wifi4/__init__.py`](src/wifi4/__init__.py)
+   (`0.7.1+opx.2` → `0.7.1+opx.3`), commits it to `main` and pushes it;
+2. creates and pushes the `v0.7.1+opx.3` tag;
+3. builds every artifact **from that tag**, so the binaries really carry the new version;
+4. publishes a GitHub Release named after the tag, with all five files attached and generated
+   release notes.
+
+Untick **Publish release** for a dry run: it builds and uploads the artifacts, with no version bump,
+tag or Release. Pushing a `v*` tag by hand is the same flow minus the bump — the tag must match
+`__version__`, or the build fails.
+
+The bump commit is pushed with `GITHUB_TOKEN`, and GitHub doesn't start workflows for token pushes,
+so a release never triggers a second build.
+
+### Build binaries
+
+`Build binaries` builds the same five artifacts and leaves them in the run's **Artifacts** section
+(no Release). It runs on every push to `main` that touches code (a Markdown/docs-only push is
+skipped), on demand from **Actions**, and as the reusable build step of `Release`.
+
+| Artifact | Target |
+|---|---|
+| `wifi4-windows-x64.exe` | Windows 10/11, x64 |
+| `wifi4-linux-x64` | Linux x86_64, built on Ubuntu 22.04 so the glibc floor stays low |
+| `wifi4-linux-arm64` | Linux aarch64 (Raspberry Pi, ARM servers), built on a native arm64 runner |
+| `wifi4-macos-universal2` | macOS, Intel + Apple Silicon in one binary |
+| `wifi4-<version>-py3-none-any.whl` | Termux/Android wheel, with the native `libusb-package` dependency removed |
+
+Each binary is booted headless (`--smoke`) before upload: that loads the bundled libusb and mounts
+every Textual screen, so a broken PyInstaller bundle fails the build instead of the release. The
+macOS binary is smoke-tested on both slices (arm64 native, x86_64 via Rosetta), and the wheel is
+checked to require Termux's system libusb instead of a compiled wheel.
+
+### Versioning
+
+- The version lives in exactly one place: `__version__` in
+  [`src/wifi4/__init__.py`](src/wifi4/__init__.py). `pyproject.toml` reads it at build time and
+  `wifi4 --version` reports it.
+- Tags are `v<__version__>`; `<upstream>+opx.<n>` counts OPX releases on top of the wifit3 base
+  version.
 
 ## One-Time Driver Setup
 
