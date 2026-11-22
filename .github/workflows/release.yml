@@ -107,6 +107,13 @@ jobs:
     permissions:
       contents: write  # create the Release and upload its assets
     steps:
+      # One resolution of "which tag are we publishing": the bumped tag on a manual release,
+      # the pushed tag otherwise. Everything below keys off it, never off github.ref_name (which
+      # is the branch name, e.g. "main", on a manual run).
+      - name: Resolve the release tag
+        id: tag
+        run: echo "name=${{ needs.version.outputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -116,11 +123,11 @@ jobs:
       - name: Publish release with binaries
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.version.outputs.tag || github.ref_name }}
-          name: wifi4 ${{ needs.version.outputs.tag || github.ref_name }}
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: wifi4 ${{ steps.tag.outputs.name }}
           files: artifacts/**
           generate_release_notes: true   # auto-changelog from commits/PRs since the last tag
           fail_on_unmatched_files: true
           # Mark PEP 440 pre-releases (…aN / …bN / …rcN, e.g. v0.1.0a1) as GitHub pre-releases;
           # a plain vX.Y.Z tag publishes as a normal release.
-          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
+          prerelease: ${{ contains(steps.tag.outputs.name, 'a') || contains(steps.tag.outputs.name, 'b') || contains(steps.tag.outputs.name, 'rc') }}
