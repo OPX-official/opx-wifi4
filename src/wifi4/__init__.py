@@ -2,4 +2,4 @@
 # this literal at build time (hatchling dynamic version, [tool.hatch.version]), and the
 # release workflow gates the pushed tag against it. Kept as a plain literal so the frozen
 # PyInstaller binary reports it from `wifi4 --version` without bundling dist metadata.
-__version__ = "0.7.1+opx.1"
+__version__ = "0.7.1+opx.2"
