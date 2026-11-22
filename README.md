@@ -1,0 +1,195 @@
+# wifi4 — OPX Edition
+> A standalone USB Wi-Fi auditor for Linux, Windows, macOS, and Android (via Termux).
+
+> **OPX build of [wifit3](https://github.com/derv82/wifit3).** Same engine, new name: the
+> command is `wifi4`. Everything ships from this repository — installs, releases and docs.
+>
+> **Versioning:** releases are tagged `v<upstream>+opx.<n>` (for example `v0.7.1+opx.1`),
+> where `<upstream>` is the wifit3 version this build is based on and `<n>` counts OPX
+> releases on that base.
+
+<p align="center">
+  <img src="assets/wifi4-1-splash.png" alt="wifi4 splash / adapter picker" width="700">
+</p>
+
+> *At least* one of the [supported USB adapters](#supported-hardware) is **required**.
+
+## Why?
+* **Cross-Platform:** Runs identically on Linux, macOS, Windows, and Android (via Termux).
+* **Wireless Driver Heaven:** Built-in wireless stack avoids kernel driver versioning hell and Windows' NDIS.
+* **Zero Runtime Dependencies:** No `aircrack-ng` or `reaver`, just pure Python with PyUSB & Textual libraries.
+
+<p align="center">
+  <img src="assets/wifi4-demo.gif" alt="wifi4 in action: WPS PushButton PSK capture" width="700">
+</p>
+
+---
+
+## Features
+
+### Reconnaissance & Analysis
+- **Multi-Card Aggregation:** Capture packets across multiple adapters simultaneously; pick a dedicated card to inject.
+- **Real-time Scanner:** 2.4GHz & 5GHz channel-hopping (split for multi-cards), DFS channels optional; tracks signal strength, encryption suites, WPA3/SAE transition modes; filter by channel and power.
+- **AP & Client Identification:** Fingerprints device vendors and categories; extracts router make and model from WPS beacons, chipset from vendor IEs; WPS M1 identity probe.
+- **Security Posture:** Detects WPA2/WPA3-Enterprise and PMF (skips attacks that can't work); flags Broadcom routers exposed to WPSplinter.
+- **Decloaking:** Reveals hidden SSIDs passively (BSSID siblings of visible networks) or actively; saves the SSIDs it finds.
+- **Packet Dashboard:** Visualizes real-time beacon, data, injection, and deauthentication packet rates.
+
+### Attacks & Captures
+- **WPA/WPA2 Handshakes:** Passive sniffing and targeted deauthentication; validates crackable pairs; WPA1, PSK-SHA256 and FT-PSK (802.11r); exports `.pcap` and `.hc22000` files.
+- **PMKID Harvesting:** Active association harvest and passive sniffing for WPA/WPA2 PMKID key material (`.hc22000`).
+- **EvilTwin WPA3 Downgrade:** *(Experimental)* Clones the AP and evicts clients (via CSA, BTM, and de-auths) to capture handshakes.
+- **WPS Recovery Suite:**
+  - **PixieDust:** Instant offline PIN recovery: *Null Secret*, *Static Secret*, and Ralink, RTL819x and eCos PRNG recovery.
+  - **PushButton (PBC):** Detects physical WPS button presses and immediately extracts the plaintext WPA PSK.
+  - **PIN Brute-Force:** Resumable WPS PIN cracking with known-PIN database and AP lock monitoring.
+- **WEP Suite:** Pure Python ARP replay, ChopChop, Fake Authentication, and PTW key recovery.
+
+### Vault & Cracking
+- **Vault:** Shows every capture per AP, its PSK status (current, stale or uncracked); search, nicknames, add credentials by hand; `Show AP` and `Verify` against the live AP.
+- **Cracking:** Built-in CPU Crack, Hashcat (multiple wordlists; pause, resume, skip) and Hashtopolis; auto-crack after each capture; remembers which wordlists were tried.
+- **Wordlists:** Built-in default passwords, SSID variants, BSSID-based PSKs and probed SSIDs (also saved to a wordlist file).
+
+## Screenshots
+
+| Scanner | Focus (single target) |
+|---|---|
+| ![Scanner](assets/wifi4-2-scanner.png) | ![Focus](assets/wifi4-3-focus-pmkid.png) |
+
+| Vault (captures, keys and crackers) |
+|---|
+| ![Vault](assets/wifi4-4-vault.png) |
+
+## Supported Hardware
+
+> **Important:** *At least one supported USB wireless adapter is required.*
+
+| Chipset | Bands | Cards (Make + Model) |
+|---|---|---|
+| Atheros AR9271 | 2.4 GHz | ALFA AWUS036**NHA**, TP-Link TL-WN722N V1 |
+| MediaTek MT7601U | 2.4 GHz | Generic unbranded "nano" dongles |
+| MediaTek MT7610U | 2.4 / 5 GHz | ALFA AWUS036**ACHM**, Panda PAU0B |
+| MediaTek MT7612U | 2.4 / 5 GHz | ALFA AWUS036**ACM** |
+| MediaTek MT7921AU | 2.4 / 5 GHz | ALFA AWUS036**AXM[L]**, Panda PAU0F |
+| MediaTek MT7925U | 2.4 / 5 GHz | Netgear A9000 |
+| Realtek RTL8812AU | 2.4 / 5 GHz | ALFA AWUS036**ACH** |
+| Realtek RTL8814AU | 2.4 / 5 GHz | ALFA AWUS1900, ASUS USB-AC68 |
+| Realtek RTL8821AU | 2.4 / 5 GHz | ALFA AWUS036**ACS**, TP-Link Archer T2U Plus/Nano |
+| Realtek RTL8821CU | 2.4 / 5 GHz | Auscoumer 600 Mbps, Mercusys MU6H |
+| Realtek RTL8922AU | 2.4 / 5 GHz | ASUS USB-BE93 |
+| Realtek RTL8822BU | 2.4 / 5 GHz | TP-Link T3U Plus, Archer T4U v3 / T4U+ |
+| Realtek RTL8822CU | 2.4 / 5 GHz | D-Link AC13U |
+| Realtek RTL8187L/B | 2.4 GHz | ALFA AWUS036**H** |
+| Realtek RTL8188EUS | 2.4 GHz | TP-Link TL-WN722N v2/v3, Mercusys MW150US |
+| Realtek RTL8188FTV | 2.4 GHz | Generic unbranded dongles |
+| Realtek RTL8192CU | 2.4 GHz | TP-Link TL-WN823N v1 |
+| Realtek RTL8192FU | 2.4 GHz | D-Link AN3U rev. A1 |
+| Ralink RT2570 | 2.4 GHz | Buffalo Nintendo Wi-Fi USB Controller |
+| Ralink RT3070 | 2.4 GHz | ALFA AWUS036**NH**, TP-Link TL-WN7200ND |
+| Ralink RT5370 | 2.4 GHz | LOTEKOO 150 Mbps |
+| Ralink RT5372 | 2.4 GHz | Panda PAU05/PAU06 |
+| Ralink RT5572 | 2.4 / 5 GHz | Panda PAU09 N600 |
+
+Breakdown of each device's capabilities and limitations: [Supported Hardware Doc](docs/SUPPORTED-HARDWARE.md).
+
+## Installation & Running
+
+### Option 1: Download Prebuilt Binaries (Recommended)
+Download the latest standalone executable from [**Releases**](https://github.com/OPX-official/opx-wifi4/releases/latest):
+
+* **Windows:** Download and run `wifi4-windows-x64.exe`.
+* **Linux x64 (non-sudo):** `chmod +x wifi4-linux-x64 && ./wifi4-linux-x64`
+* **Linux arm64 (non-sudo):** `chmod +x wifi4-linux-arm64 && ./wifi4-linux-arm64`
+* **macOS:** (bypass quarantine)
+  ```bash
+  xattr -d com.apple.quarantine wifi4-macos-universal2
+  chmod +x wifi4-macos-universal2
+  ./wifi4-macos-universal2
+  ```
+* **Android (Termux):** no executable; this fork's [Releases](https://github.com/OPX-official/opx-wifi4/releases/latest) also ship a prebuilt wheel. Install the **Termux:API app** from F-Droid or Google Play (the `termux-api` package alone is not enough).
+  ```bash
+  pkg install python libusb termux-api
+  pip install wifi4-<version>-py3-none-any.whl   # downloaded from the fork's Releases
+  wifi4
+  ```
+  Or install the latest release directly:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/OPX-official/opx-wifi4/main/scripts/termux/install.sh | bash
+  ```
+  See [Running in Termux](docs/TERMUX.md).
+
+### Option 2: Run from Source
+wifi4 uses Astral's [`uv`](https://docs.astral.sh/uv/). `sync` sets up dependencies:
+```bash
+uv sync
+uv run wifi4
+```
+
+**Android (Termux):**
+```bash
+pkg install python libusb termux-api git uv
+git clone https://github.com/OPX-official/opx-wifi4
+cd opx-wifi4
+uv sync --no-dev
+uv run --no-dev wifi4
+```
+Install the **Termux:API app** from F-Droid or Google Play as well; the `termux-api` package is only the client. Use `--no-dev`: the dev group includes PyInstaller, which doesn't build on Termux. Python 3.13+ skips `libusb-package`; older Pythons can use the prebuilt wheel above or `uv sync --no-dev --no-install-package libusb-package`. See [Running in Termux](docs/TERMUX.md) for the USB setup.
+
+### Option 3: Build your own binary
+```bash
+uv run pyinstaller wifi4.spec --noconfirm --clean
+```
+Binary executable is written to `dist/` subdirectory.
+
+### Android (Termux, no root)
+Maintained by [**OPX Team**](https://github.com/OPX-official) at [**opx-wifi4**](https://github.com/OPX-official/opx-wifi4): no root, proot or VM. It uses `termux-usb` and asks Android for permission when a card is plugged in. Install steps are in its README.
+
+## One-Time Driver Setup
+
+wifi4 automatically handles hardware configuration within the app, after clicking the `START` button:
+
+- **Linux:** Prompts once via `pkexec`/`sudo` to write udev permissions and blocklists in `/etc/modprobe.d/`.
+- **macOS:** No installation required; plug in the device and select *Allow* in the authorization dialog.
+- **Windows:** Prompts once via UAC to install WinUSB for the device.
+- **Android (Termux):** No privileged setup; accept Android's USB permission dialog. See [TERMUX.md](docs/TERMUX.md).
+- **VirtualBox:** Add your device(s) to VirtualBox's `USB Filters` *before* plugging in.
+
+## Uninstalling
+Return the previously-installed device to your operating system's Wi-Fi stack:
+
+1. Select the card on the wifi4 splash screen.
+2. Click the `Uninstall` button and confirm.
+3. Accept the elevation prompt (UAC on Windows or `pkexec` on Linux).
+4. Unplug and re-plug the adapter.
+
+On Linux, this deletes wifi4's `udev` and `modprobe` rules.
+On Windows, this uninstalls the WinUSB binding, and triggers a PnP device rescan (old driver reattaches).
+
+## *Thank you, Linux!*
+
+wifi4 only exists because of the great people who reverse-engineered and maintained these Linux wireless
+drivers. It's usually a thankless job.
+
+Special thanks to:
+- **Christian "kimo" B. ([@kimocoder](https://github.com/kimocoder))** who maintains **wifite2** and `aircrack-ng`'s RTL8188EUS DKMS driver.
+- [**Neur0sp1cy**](https://github.com/neur0sp1cy): Close friend and the master to my Linux & wireless-hacking apprenticeship.
+- **Nick Morrow** ([@morrownr](https://github.com/morrownr)), legend, maintains the out-of-tree Realtek USB
+  DKMS drivers.
+
+The full list is in **[CREDITS.md](docs/CREDITS.md)**.
+
+## How it Works: Mini-Drivers
+
+wifi4 bypasses the operating system's native Wi-Fi stack entirely. It ships with lightweight Python ports of Linux kernel drivers ([src/wifi4/chips/\*](src/wifi4/chips)) that directly control wireless devices over USB bulk and control transfers.
+
+Because register-level frame injection and monitor mode are performed entirely in user space, Windows NDIS restrictions and Linux kernel driver locking do not apply.
+
+For how a driver is ported from the Linux source and checked against a USB capture of the Linux driver, see the [Porting Documentation](docs/porting/METHODOLOGY.md).
+
+## License & Disclaimer
+
+**Code:** Licensed under [**GNU General Public License v2.0**](LICENSE) (matching upstream Linux drivers).
+
+**Firmware:** Vendor firmware blobs loaded onto adapters are redistributed verbatim under their respective manufacturers' licenses (details in [FIRMWARE.md](docs/FIRMWARE.md)).
+
+**⚠️ Notice & Disclaimer:** For use only on networks and equipment you own or are explicitly authorized to audit. wifi4 operates directly on USB hardware registers without kernel guardrails; use at your own risk.

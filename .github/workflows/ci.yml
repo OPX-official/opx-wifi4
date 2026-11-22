@@ -1,0 +1,122 @@
+# Fast pre-merge checks: lint, the mocked unit-test suite, and an import smoke. Runs on every
+# pull request, plus pushes to master (the repo commits directly to master, so PR-only CI would
+# never see those). All ubuntu-latest = 1x minutes; no hardware needed (USB is fully mocked).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A newer push/PR-update supersedes an in-flight run on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint + test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    # Every Python that pyproject's requires-python allows.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync env (runtime + dev deps)
+        run: uv sync --group dev
+
+      # Lint only — NEVER `ruff format` (this tree is hand-formatted ~99-col; the formatter is a
+      # deliberate no-op repo-wide). See pyproject.toml / CLAUDE.md.
+      - name: Lint (ruff check)
+        run: uv run ruff check src/ tests/
+
+      # USB is fully mocked; pyproject addopts deselects @pytest.mark.slow by default.
+      - name: Unit tests
+        run: uv run pytest
+
+      # Catches a syntax/import error in any module the test suite doesn't reach — importing the
+      # UI pulls the Textual path, and calling every import_driver() imports every chips/*/driver.py.
+      - name: Import smoke (UI + every driver registers)
+        run: |
+          uv run python - <<'PY'
+          from wifi4.ui.app import WifiteApp  # noqa: F401  -- UI + textual import path
+          from wifi4.device.manager import supported_ids
+          classes = {import_driver() for (_entry, _key, import_driver) in supported_ids().values()}
+          print(f"{len(classes)} driver classes import cleanly across {len(supported_ids())} VID:PIDs")
+          assert len(classes) >= 10, f"driver registry looks broken: {len(classes)}"
+          PY
+
+  # Termux/Android reports sys.platform == "linux", so this lane runs the same suite with the
+  # Termux detection env set, then checks the platform-specific build metadata.
+  termux:
+    name: Termux paths
+    runs-on: ubuntu-latest
+    env:
+      TERMUX_VERSION: "0.118.3"
+      PREFIX: /data/data/com.termux/files/usr
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync env (runtime + dev deps)
+        run: uv sync --group dev
+
+      - name: Unit tests under Termux detection
+        run: uv run pytest
+
+      # Termux's Python reports sys_platform == "android"; the lock must stay installable there.
+      - name: Resolve the Termux dependency set
+        run: |
+          UV_PROJECT_ENVIRONMENT="$(mktemp -d)" uv sync --frozen --no-dev --no-install-project \
+            --python-platform aarch64-linux-android
+
+      # The glibc libusb wheel cannot load under Termux, so hatch_build.py drops it there only.
+      - name: Termux wheel omits the bundled libusb
+        run: |
+          uv build --wheel --out-dir dist-termux
+          uv run python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist-termux/*.whl")[0]
+          archive = zipfile.ZipFile(wheel)
+          metadata = archive.read(
+              next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))).decode()
+          requires = [line for line in metadata.splitlines()
+                      if line.startswith("Requires-Dist:")]
+          assert not any("libusb-package" in line for line in requires), \
+              "Termux wheel must use the system libusb"
+          print("Termux wheel metadata omits libusb-package")
+          PY
+
+      - name: Desktop wheel keeps the bundled libusb
+        env:
+          TERMUX_VERSION: ""
+          PREFIX: ""
+        run: |
+          uv build --wheel --out-dir dist-desktop
+          uv run python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist-desktop/*.whl")[0]
+          archive = zipfile.ZipFile(wheel)
+          metadata = archive.read(
+              next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))).decode()
+          requires = [line for line in metadata.splitlines()
+                      if line.startswith("Requires-Dist:")]
+          assert any("libusb-package" in line for line in requires), \
+              "desktop wheel lost its bundled libusb"
+          print("Desktop wheel metadata keeps libusb-package")
+          PY
