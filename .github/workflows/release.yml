@@ -1,15 +1,18 @@
-# Publish a GitHub Release for a pushed tag, with every wifi4 binary attached.
+# One button (or one tag) -> version bump, all binaries, GitHub Release.
 #
-# The building lives in build-binaries.yml (the single place that knows how to build a binary);
-# this workflow only calls it and publishes the result:
-#   1. `binaries` calls build-binaries.yml (workflow_call), which builds+smoke-tests each target
-#      and uploads every artifact.
-#   2. `release` waits for it, DOWNLOADS all artifacts, and attaches them to a GitHub Release
-#      for the pushed tag (softprops/action-gh-release).
+# "Run workflow" on this workflow does the whole release, in order:
+#   1. `version`  bumps the fork counter in src/wifi4/__init__.py (0.7.1+opx.1 -> 0.7.1+opx.2),
+#                 commits it to main, creates the v<version> tag and pushes both.
+#   2. `binaries` calls build-binaries.yml with that tag, so every artifact really contains the
+#                 new version (Windows x64, Linux x64, Linux arm64, macOS universal2, Termux wheel).
+#   3. `release`  downloads the artifacts and publishes them on a GitHub Release for the tag.
+# Pushing a v* tag by hand does the same minus the bump: build the tag, publish the Release.
 #
-# Trigger: push a version tag, e.g.  git tag v0.1.0 && git push origin v0.1.0
-# Dry run: the "Run workflow" button (workflow_dispatch) builds + uploads artifacts you can
-# download from the run, but SKIPS publishing a Release (no tag -> the release job is gated off).
+# Dry run: untick "Publish release" in the Run workflow form to build + upload artifacts with no
+# version bump, no tag and no Release.
+#
+# The bump commit is pushed with GITHUB_TOKEN, and GitHub doesn't run workflows for token pushes,
+# so this never re-triggers the push build twice.
 
 name: Release
 
@@ -18,26 +21,91 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Bump the version, tag it and publish a GitHub Release (untick for a build-only dry run)"
+        type: boolean
+        default: true
 
-# Don't cancel a release build that's already publishing; just queue per ref.
+# Never cancel a release mid-publish; just queue per ref.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  version:
+    name: Bump version and tag
+    # Only a manual run bumps: a tag push already carries its version.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push the bump commit and the tag
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Bump the +opx counter, commit and tag
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=src/wifi4/__init__.py
+          current=$(grep -m1 '^__version__ = ' "$file" | sed -E 's/.*"(.*)".*/\1/')
+          base=${current%%+*}
+          counter=0
+          [[ $current == *+opx.* ]] && counter=${current##*+opx.}
+          next="${base}+opx.$((counter + 1))"
+          tag="v${next}"
+          echo "current=$current  next=$next  tag=$tag"
+
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "::error::$tag already exists; bump the version by hand first"
+            exit 1
+          fi
+
+          # Rewrite only the __version__ literal — the single source of truth hatchling reads.
+          python3 - "$file" "$next" <<'PY'
+          import pathlib, re, sys
+          path, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+          source = path.read_text(encoding="utf-8")
+          patched = re.sub(r'^__version__ = ".*"$', f'__version__ = "{version}"',
+                           source, count=1, flags=re.M)
+          if patched == source:
+              sys.exit("no __version__ literal rewritten")
+          path.write_text(patched, encoding="utf-8")
+          PY
+
+          git config user.name "OP AMINUL FF"
+          git config user.email "opx.team.official@gmail.com"
+          git add "$file"
+          git commit -m "chore(release): wifi4 $next"
+          git tag "$tag"
+          git push origin HEAD:main "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   binaries:
     name: Build all binaries
+    needs: [version]
+    # Run after a successful bump, and also when `version` was skipped (tag push / dry run).
+    if: ${{ always() && needs.version.result != 'failure' && needs.version.result != 'cancelled' }}
     uses: ./.github/workflows/build-binaries.yml
+    with:
+      # A manual release builds the tag it just created; a tag push builds that tag.
+      ref: ${{ needs.version.outputs.tag || github.ref }}
 
   release:
     name: Publish GitHub Release
-    needs: [binaries]
-    # Only publish for an actual tag push; a manual workflow_dispatch just leaves the
-    # artifacts attached to the run for download.
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, binaries]
+    # Publish for a tag push, or for a manual run with "Publish release" ticked. Nothing to
+    # publish in a dry run.
+    if: ${{ always() && needs.binaries.result == 'success' &&
+            (startsWith(github.ref, 'refs/tags/') || needs.version.outputs.tag != '') }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # required to create the Release and upload assets
+      contents: write  # create the Release and upload its assets
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
@@ -48,6 +116,8 @@ jobs:
       - name: Publish release with binaries
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.version.outputs.tag || github.ref_name }}
+          name: wifi4 ${{ needs.version.outputs.tag || github.ref_name }}
           files: artifacts/**
           generate_release_notes: true   # auto-changelog from commits/PRs since the last tag
           fail_on_unmatched_files: true

@@ -9,11 +9,18 @@
 #   - push to main   : keeps a fresh set of binaries downloadable from the Actions tab
 #   - workflow_dispatch ("Run workflow"): build on demand, e.g. to test a branch
 #   - workflow_call  : used by release.yml so a tagged release publishes these exact artifacts
+#                      (it passes `ref`, so the build can target the tag release.yml just created)
 
 name: Build binaries
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: "Git ref (branch, tag or SHA) to build. Empty = the caller's own commit."
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
   push:
     branches: [main]
@@ -47,15 +54,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
-      # Fail the build if the pushed tag (vX.Y.Z) doesn't match __version__ — the single source
+      # Fail the build if the built tag (vX.Y.Z) doesn't match __version__ — the single source
       # of truth. pyproject derives its version from it (hatchling dynamic version), so we grep
       # the literal in __init__.py rather than pyproject.
       - name: Verify tag matches package version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ inputs.ref != '' && startsWith(inputs.ref, 'refs/tags/') || startsWith(github.ref, 'refs/tags/') }}
         shell: bash
+        env:
+          BUILD_REF: ${{ inputs.ref }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          # A called build gets the tag through `ref`; a tag push already has it in GITHUB_REF.
+          tag="${BUILD_REF:-${GITHUB_REF}}"
+          tag="${tag#refs/tags/}"
+          tag="${tag#v}"
           proj=$(grep -m1 '^__version__ = ' src/wifi4/__init__.py | sed -E 's/.*"(.*)".*/\1/')
           echo "tag=$tag  __version__=$proj"
           if [ "$tag" != "$proj" ]; then
@@ -109,13 +123,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       # Same tag/version gate as the build matrix job.
       - name: Verify tag matches package version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ inputs.ref != '' && startsWith(inputs.ref, 'refs/tags/') || startsWith(github.ref, 'refs/tags/') }}
         shell: bash
+        env:
+          BUILD_REF: ${{ inputs.ref }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          # A called build gets the tag through `ref`; a tag push already has it in GITHUB_REF.
+          tag="${BUILD_REF:-${GITHUB_REF}}"
+          tag="${tag#refs/tags/}"
+          tag="${tag#v}"
           proj=$(grep -m1 '^__version__ = ' src/wifi4/__init__.py | sed -E 's/.*"(.*)".*/\1/')
           echo "tag=$tag  __version__=$proj"
           if [ "$tag" != "$proj" ]; then
@@ -199,12 +220,19 @@ jobs:
       PREFIX: /data/data/com.termux/files/usr
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Verify tag matches package version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ inputs.ref != '' && startsWith(inputs.ref, 'refs/tags/') || startsWith(github.ref, 'refs/tags/') }}
         shell: bash
+        env:
+          BUILD_REF: ${{ inputs.ref }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          # A called build gets the tag through `ref`; a tag push already has it in GITHUB_REF.
+          tag="${BUILD_REF:-${GITHUB_REF}}"
+          tag="${tag#refs/tags/}"
+          tag="${tag#v}"
           proj=$(grep -m1 '^__version__ = ' src/wifi4/__init__.py | sed -E 's/.*"(.*)".*/\1/')
           echo "tag=$tag  __version__=$proj"
           if [ "$tag" != "$proj" ]; then
